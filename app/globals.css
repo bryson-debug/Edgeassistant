@@ -171,6 +171,15 @@ textarea {
   font-weight: 600;
 }
 
+.footer p {
+  margin: 0;
+}
+
+.footer .notice {
+  margin-top: 2px;
+  font-size: 11px;
+}
+
 .footer a {
   color: var(--teal-text-hover); /* 5.7:1 on the warm gray background */
   font-weight: 600;

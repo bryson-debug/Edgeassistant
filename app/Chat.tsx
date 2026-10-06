@@ -14,6 +14,7 @@ type StreamEvent =
   | { type: "error"; text: string };
 
 const STORAGE_KEY = "edge-assistant-chat-v1";
+const CONVERSATION_KEY = "edge-assistant-conversation-id";
 const MAX_CHARS = 1000;
 const HISTORY_SENT = 10;
 const SUPPORT_EMAIL = "hello@thatmusicteacher.com";
@@ -40,6 +41,8 @@ export default function Chat({ allowedParentOrigins }: { allowedParentOrigins: s
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const stickToBottom = useRef(true);
   const abortRef = useRef<AbortController | null>(null);
+  // Anonymous ID that groups this conversation's messages in the admin log.
+  const conversationId = useRef("");
 
   // Only run inside an iframe on an allowed parent. The CSP header already
   // stops other sites from framing the page; this covers opening it directly.
@@ -59,6 +62,7 @@ export default function Chat({ allowedParentOrigins }: { allowedParentOrigins: s
   }, [allowedParentOrigins]);
 
   useEffect(() => {
+    conversationId.current = readConversationId();
     try {
       const saved = sessionStorage.getItem(STORAGE_KEY);
       if (saved) {
@@ -127,7 +131,7 @@ export default function Chat({ allowedParentOrigins }: { allowedParentOrigins: s
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: toApiHistory(next) }),
+        body: JSON.stringify({ messages: toApiHistory(next), conversationId: conversationId.current }),
         signal: controller.signal,
       });
       if (!res.ok || !res.body) {
@@ -174,6 +178,7 @@ export default function Chat({ allowedParentOrigins }: { allowedParentOrigins: s
     setMessages([]);
     setInput("");
     setShowJump(false);
+    conversationId.current = startConversation();
     try {
       sessionStorage.removeItem(STORAGE_KEY);
     } catch {
@@ -298,7 +303,10 @@ export default function Chat({ allowedParentOrigins }: { allowedParentOrigins: s
       </form>
 
       <footer className="footer">
-        Need help with your account? Email <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>
+        <p>
+          Need help with your account? Email <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>
+        </p>
+        <p className="notice">Chats are saved to help us improve the assistant.</p>
       </footer>
     </div>
   );
@@ -428,6 +436,31 @@ function toApiHistory(messages: Message[]) {
       return acc;
     }, [])
     .slice(-HISTORY_SENT);
+}
+
+function randomId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
+function startConversation(): string {
+  const id = randomId();
+  try {
+    sessionStorage.setItem(CONVERSATION_KEY, id);
+  } catch {
+    // ignore
+  }
+  return id;
+}
+
+function readConversationId(): string {
+  try {
+    const saved = sessionStorage.getItem(CONVERSATION_KEY);
+    if (saved && /^[A-Za-z0-9-]{8,64}$/.test(saved)) return saved;
+  } catch {
+    // ignore
+  }
+  return startConversation();
 }
 
 function isMessage(value: unknown): value is Message {

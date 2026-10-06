@@ -1,5 +1,5 @@
 import { Ratelimit } from "@upstash/ratelimit";
-import { Redis } from "@upstash/redis";
+import { getRedis } from "./redis";
 
 export const HOURLY_LIMIT = 30;
 export const DAILY_LIMIT = 100;
@@ -15,12 +15,8 @@ let limiters: { hourly: Limiter; daily: Limiter } | null = null;
 
 function getLimiters() {
   if (limiters) return limiters;
-  // The Vercel Marketplace Upstash integration sets KV_REST_API_*; a direct
-  // Upstash setup uses UPSTASH_REDIS_REST_*.
-  const url = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
-  if (url && token) {
-    const redis = new Redis({ url, token });
+  const redis = getRedis();
+  if (redis) {
     limiters = {
       hourly: new Ratelimit({ redis, prefix: "edge:rl:h", limiter: Ratelimit.slidingWindow(HOURLY_LIMIT, "1 h") }),
       daily: new Ratelimit({ redis, prefix: "edge:rl:d", limiter: Ratelimit.slidingWindow(DAILY_LIMIT, "1 d") }),
@@ -41,6 +37,19 @@ export async function checkRateLimit(visitor: string): Promise<boolean> {
   const { hourly, daily } = getLimiters();
   const [h, d] = await Promise.all([hourly.limit(visitor), daily.limit(visitor)]);
   return h.success && d.success;
+}
+
+let loginLimiter: Limiter | null = null;
+
+// Admin sign-in attempts: 10 an hour per IP address.
+export async function checkLoginLimit(visitor: string): Promise<boolean> {
+  if (!loginLimiter) {
+    const redis = getRedis();
+    loginLimiter = redis
+      ? new Ratelimit({ redis, prefix: "edge:rl:login", limiter: Ratelimit.slidingWindow(10, "1 h") })
+      : new MemoryLimiter(10, 60 * 60 * 1000);
+  }
+  return (await loginLimiter.limit(visitor)).success;
 }
 
 // The first X-Forwarded-For entry is the client address on Vercel.

@@ -23,14 +23,30 @@ Edit `prompts/system-prompt.txt` and redeploy. The server adds one line after it
 | `AIRTABLE_TOKEN` | Airtable personal access token with `data.records:read` on base `appqNfq390NUKfoD9` |
 | `MODEL` | Optional. Defaults to `claude-haiku-4-5` |
 | `ALLOWED_PARENT_ORIGINS` | `https://thatmusicteacher.thrivecart.com` (comma-separated if more) |
+| `ADMIN_PASSWORD` | Password for the admin chat log at `/admin`. Admin is off when unset. Changing it signs everyone out. |
+| `LOG_SALT` | Optional. A long random string used to hash visitor IPs. Set it once and leave it, or visitor IDs change. Falls back to `ADMIN_PASSWORD`. |
 
 Rate limiting (30 messages an hour and 100 a day per IP address) needs **Upstash Redis**. Add it from the Vercel Marketplace (Storage → Upstash → Redis) and connect it to this project; it sets `KV_REST_API_URL` and `KV_REST_API_TOKEN` automatically. Without it, each server instance counts separately, which is much weaker.
+
+## Admin chat log
+
+Open `https://YOUR-APP.vercel.app/admin` directly (not inside ThriveCart) and sign in with `ADMIN_PASSWORD`.
+
+- **Overview:** messages, conversations, Claude cost and the share of questions with no recommendation over the last 7 and 30 days, a 14-day table, and this month's most recommended items.
+- **Conversations:** newest first. Each shows every member question, the reply as it was shown (text, cards and the exact links), any transcript searches Claude ran, invalid record IDs that were dropped, token usage, cost and response time.
+- **Search and filters:** text search over questions and replies, and filters for "No recommendation" (often a catalog gap), "Errors or invalid IDs" and "Rate limited". Search covers the latest 2,000 messages.
+- **CSV export** for the last 30, 90 or 365 days.
+
+Privacy: a conversation is grouped by a random ID the browser creates, which resets on "New chat". Visitors appear as a 12-character one-way hash of the IP address; raw IPs are never stored. Logs, including rate-limited attempts, delete themselves after 1 year. Members see "Chats are saved to help us improve the assistant." in the footer.
+
+Logs are stored in the same Upstash Redis as rate limiting. Without Redis they're kept in memory, which is for local development only: they vanish on restart and aren't shared between server instances.
 
 ## Security
 
 - `Content-Security-Policy: frame-ancestors` comes from `ALLOWED_PARENT_ORIGINS`, so browsers refuse to show the page inside any other site. Opened directly in a tab, it shows a message pointing members to the member area.
 - `/api/chat` rejects any request whose `Origin` isn't the app's own domain.
 - Member messages are capped at 1,000 characters and Claude's replies at 800 tokens.
+- `/admin` can't be framed and isn't indexed. Sign-in uses a signed, HTTP-only cookie that lasts 12 hours, is limited to 10 attempts an hour per IP, and rejects cross-site form posts.
 
 ## Colors and contrast
 

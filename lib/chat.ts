@@ -11,7 +11,8 @@ export type ChatEvent =
   | { type: "error"; text: string }
   // Internal events: used by the test script, never sent to the browser.
   | { type: "usage"; model: string; usage: Anthropic.Usage }
-  | { type: "tool"; query: string; ids: string[] };
+  | { type: "tool"; query: string; ids: string[] }
+  | { type: "dropped"; ids: string[] };
 
 export const FRIENDLY_ERROR =
   "Sorry, I'm having trouble right now. Please try again in a moment, or email hello@thatmusicteacher.com if it keeps happening.";
@@ -89,9 +90,13 @@ export async function* runChat(
     { type: "text", text: todayLine(options.now ?? new Date()) },
   ];
 
+  const dropped: string[] = [];
   const filter = new ReplyFilter(
     (id) => catalog.items.get(id),
-    (id) => console.error(`Dropped unknown record ID from reply: ${JSON.stringify(id)}`),
+    (id) => {
+      dropped.push(id);
+      console.error(`Dropped unknown record ID from reply: ${JSON.stringify(id)}`);
+    },
   );
   const messages: Anthropic.MessageParam[] = [...history];
   let emittedText = false;
@@ -146,11 +151,13 @@ export async function* runChat(
   } catch (err) {
     console.error("Claude request failed:", describeError(err));
     yield* emit(filter.flush());
+    if (dropped.length) yield { type: "dropped", ids: dropped };
     yield { type: "error", text: FRIENDLY_ERROR };
     return;
   }
 
   yield* emit(filter.flush());
+  if (dropped.length) yield { type: "dropped", ids: dropped };
 }
 
 function* emit(parts: ReplyPart[]): Generator<ChatEvent> {
